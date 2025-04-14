@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArtBuddy</title>
+    <link rel="stylesheet" href="index.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="logo-container">
+                <img src="Assets/logo.png" alt="logo" class="logo">
+            </div>
+
+            <div class="toolbar">
+                <div class="tools">
+                    <i data-lucide="save" class="tool-btn save" title="Save"></i>
+                    <i data-lucide="pencil" class="tool-btn pencil active" title="Pencil"></i>
+                    <input type="range" class="size-control" min="1" max="50" value="5">
+                    <input type="color" class="color-picker" value="#000000">
+                    <button class="tool-btn shapes" title="Shapes">Shapes</button>
+                    <i data-lucide="rotate-ccw" class="tool-btn undo" title="Undo"></i>
+                    <i data-lucide="rotate-cw" class="tool-btn redo" title="Redo"></i>
+                    <i data-lucide="eraser" class="tool-btn eraser" title="Eraser"></i>
+                    <i data-lucide="trash-2" class="tool-btn reset" title="Reset"></i>
+                    <input type="color" class="bg-color-picker" value="#ffffff">
+                    <!-- <i data-lucide="download" class="tool-btn download" title="Download"></i> -->
+                </div>
+            </div>
+        </nav>
+
+        <div class="canvas-container">
+            <canvas id="backgroundCanvas"></canvas>
+            <canvas id="drawingCanvas"></canvas>
+        </div>
+
+        <div class="shapes-modal">
+            <button class="shape-option" data-shape="rect" title="Rectangle">
+                <i data-lucide="square"></i>
+            </button>
+            <button class="shape-option" data-shape="circle" title="Circle">
+                <i data-lucide="circle"></i>
+            </button>
+            <button class="shape-option" data-shape="line" title="Line">
+                <i data-lucide="minus"></i>
+            </button>
+        </div>
+        
+    </div>
+    <script>
+        lucide.createIcons();
+    </script>
+      
+    <script src="main.js"></script>
+</body>
+</html>
