@@ -1,224 +1,360 @@
-const canvas = document.getElementById('drawingCanvas');
-const bgCanvas = document.getElementById('backgroundCanvas');
-const nav = document.querySelector(".navbar");
-const ctx = canvas.getContext('2d');
-const bgCtx = bgCanvas.getContext('2d');
 
-// Canvas setup
-const CANVAS_WIDTH = window.innerWidth;
-const CANVAS_HEIGHT = window.innerHeight;
-canvas.width = bgCanvas.width = CANVAS_WIDTH;
-canvas.height = bgCanvas.height = CANVAS_HEIGHT;
-
-// Performance improvement
-canvas.willReadFrequently = true;
-bgCanvas.willReadFrequently = true;
-
-// Initial state
-let isDrawing = false;
-let currentTool = 'pencil';
-let currentColor = '#000000';
-let currentSize = 5;
-let bgColor = '#ffffff';
-let currentShape = null;
-let startX, startY;
-let drawingHistory = [];
-let historyIndex = -1;
-
-// Initialize
-bgCtx.fillStyle = bgColor;
-bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-ctx.lineCap = 'round';
-ctx.lineJoin = 'round';
-ctx.lineWidth = currentSize;
-ctx.strokeStyle = currentColor;
-
-// Event Listeners
-canvas.addEventListener('mousedown', startDrawing);
-canvas.addEventListener('mousemove', draw);
-canvas.addEventListener('mouseup', endDrawing);
-canvas.addEventListener('mouseout', endDrawing);
-
-document.querySelectorAll('.tool-btn').forEach(btn => {
-    const tool = btn.classList[1];
-    if (tool === 'shapes') return;
-    btn.addEventListener('click', () => setTool(tool));
-});
-
-document.querySelector('.shapes').addEventListener('click', toggleShapeMenu);
-document.querySelectorAll('.shape-option').forEach(btn => {
-    btn.addEventListener('click', selectShape);
-});
-
-document.querySelector('.size-control').addEventListener('input', e => {
-    currentSize = e.target.value;
-    ctx.lineWidth = currentSize;
-});
-
-document.querySelector('.color-picker').addEventListener('input', e => {
-    currentColor = e.target.value;
-    ctx.strokeStyle = currentColor;
-});
-
-document.querySelector('.bg-color-picker').addEventListener('input', e => {
-    bgColor = e.target.value;
-    bgCtx.fillStyle = bgColor;
-    bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-});
-
-document.querySelector('.undo').addEventListener('click', undo);
-document.querySelector('.redo').addEventListener('click', redo);
-document.querySelector('.reset').addEventListener('click', resetCanvas);
-document.querySelector('.save').addEventListener('click', saveCanvas);
-
-// Functions
-function setTool(tool) {
-    currentTool = tool;
-    currentShape = null;
-    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-
-    if (tool !== "shape") {
-        document.querySelector(`.${tool}`).classList.add('active');
-    }
-
-    if (tool === 'eraser') {
-        ctx.strokeStyle = bgColor;
-    } else {
-        ctx.strokeStyle = currentColor;
-    }
-}
-
-function startDrawing(e) {
-    isDrawing = true;
-    [startX, startY] = getMousePos(e);
-
-    ctx.beginPath();
-    if (!currentShape) {
-        ctx.moveTo(startX, startY);
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    // Canvas setup
+    const drawingCanvas = document.getElementById('drawingCanvas');
+    const backgroundCanvas = document.getElementById('backgroundCanvas');
+    const ctx = drawingCanvas.getContext('2d');
+    const bgCtx = backgroundCanvas.getContext('2d');
     
-    if (drawingHistory.length === 0 || historyIndex === -1) {
-        saveState();
-    }
-}
-
-function draw(e) {
-    if (!isDrawing) return;
-    const [x, y] = getMousePos(e);
-
-    if (currentShape) {
-        // Clear and restore previous state for shape preview
-        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        if (historyIndex >= 0) {
-            ctx.putImageData(drawingHistory[historyIndex], 0, 0);
+    // Tool elements
+    const pencilBtn = document.querySelector('.pencil');
+    const eraserBtn = document.querySelector('.eraser');
+    const resetBtn = document.querySelector('.reset');
+    const undoBtn = document.querySelector('.undo');
+    const redoBtn = document.querySelector('.redo');
+    const shapesBtn = document.querySelector('.shapes');
+    const saveBtn = document.querySelector('.save');
+    const sizeControl = document.querySelector('.size-control');
+    const colorPicker = document.querySelector('.color-picker');
+    const bgColorPicker = document.querySelector('.bg-color-picker');
+    const shapesModal = document.querySelector('.shapes-modal');
+    const shapeOptions = document.querySelectorAll('.shape-option');
+    
+    // App state
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let currentTool = 'pencil';
+    let currentShape = null;
+    let lineWidth = sizeControl.value;
+    let strokeColor = colorPicker.value;
+    let bgColor = bgColorPicker.value;
+    let history = [];
+    let redoStack = [];
+    let startX, startY;
+    let shapeInProgress = false;
+    
+    // Local storage keys
+    const STORAGE_DRAWING_KEY = 'artbuddy-drawing';
+    const STORAGE_BG_COLOR_KEY = 'artbuddy-bg-color';
+    
+    // Initialize canvas size
+    function resizeCanvas() {
+        const container = document.querySelector('.canvas-container');
+        drawingCanvas.width = container.offsetWidth;
+        drawingCanvas.height = container.offsetHeight;
+        backgroundCanvas.width = container.offsetWidth;
+        backgroundCanvas.height = container.offsetHeight;
+        
+        // Load saved background color or use default
+        loadBackgroundColor();
+        
+        // Redraw content if there's any history
+        if (history.length > 0) {
+            restoreCanvasState(history[history.length - 1]);
+        } else {
+            // Try to load from local storage if no history exists
+            loadFromLocalStorage();
         }
-        drawShape(startX, startY, x, y);
-        return;
     }
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-}
-
-function endDrawing() {
-    if (!isDrawing) return;
-    isDrawing = false;
-
-    if (currentShape) {
-        saveState();
+    
+    // Save current canvas state to history
+    function saveCanvasState() {
+        const imageData = ctx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
+        history.push(imageData);
+        redoStack = []; // Clear redo stack on new action
+        
+        // Save to local storage
+        saveToLocalStorage();
+    }
+    
+    // Restore canvas from saved state
+    function restoreCanvasState(imageData) {
+        ctx.putImageData(imageData, 0, 0);
+    }
+    
+    // Clear canvas
+    function clearCanvas() {
+        ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+    }
+    
+    // Save drawing to local storage
+    function saveToLocalStorage() {
+        try {
+            // Save the drawing
+            localStorage.setItem(STORAGE_DRAWING_KEY, drawingCanvas.toDataURL());
+            
+            // Save background color
+            localStorage.setItem(STORAGE_BG_COLOR_KEY, bgColor);
+        } catch (error) {
+            console.error('Error saving to local storage:', error);
+        }
+    }
+    
+    // Load drawing from local storage
+    function loadFromLocalStorage() {
+        try {
+            // Load drawing
+            const savedDrawing = localStorage.getItem(STORAGE_DRAWING_KEY);
+            if (savedDrawing) {
+                const img = new Image();
+                img.onload = function() {
+                    ctx.drawImage(img, 0, 0);
+                    // Create initial history entry
+                    const imageData = ctx.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height);
+                    history = [imageData];
+                };
+                img.src = savedDrawing;
+            }
+            
+            // Load background is handled by loadBackgroundColor()
+        } catch (error) {
+            console.error('Error loading from local storage:', error);
+        }
+    }
+    
+    // Load background color from local storage
+    function loadBackgroundColor() {
+        try {
+            const savedBgColor = localStorage.getItem(STORAGE_BG_COLOR_KEY);
+            if (savedBgColor) {
+                bgColor = savedBgColor;
+                bgColorPicker.value = bgColor;
+            }
+            
+            // Apply background color to canvas
+            bgCtx.fillStyle = bgColor;
+            bgCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+        } catch (error) {
+            console.error('Error loading background color from local storage:', error);
+        }
+    }
+    
+    // Draw functions
+    function startDrawing(e) {
+        isDrawing = true;
+        [lastX, lastY] = getPointerPosition(e);
+        
+        if (currentShape) {
+            shapeInProgress = true;
+            startX = lastX;
+            startY = lastY;
+            saveCanvasState(); // Save state before drawing shape
+        }
+    }
+    
+    function draw(e) {
+        if (!isDrawing) return;
+        
+        const [currentX, currentY] = getPointerPosition(e);
+        
+        if (currentShape && shapeInProgress) {
+            // For shapes, preview by clearing and redrawing
+            clearCanvas();
+            restoreCanvasState(history[history.length - 1]);
+            ctx.beginPath();
+            ctx.lineWidth = lineWidth;
+            ctx.strokeStyle = currentTool === 'eraser' ? bgColor : strokeColor;
+            
+            drawShape(startX, startY, currentX, currentY);
+            
+            ctx.stroke();
+            return;
+        }
+        
+        ctx.beginPath();
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = currentTool === 'eraser' ? bgColor : strokeColor;
+        
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(currentX, currentY);
+        ctx.stroke();
+        
+        [lastX, lastY] = [currentX, currentY];
+    }
+    
+    function endDrawing() {
+        if (isDrawing) {
+            isDrawing = false;
+            
+            if (currentShape && shapeInProgress) {
+                shapeInProgress = false;
+                saveCanvasState(); // Save the completed shape
+            } else if (!currentShape) {
+                saveCanvasState(); // Save the completed free drawing
+            }
+        }
+    }
+    
+    // Shape drawing helper
+    function drawShape(startX, startY, endX, endY) {
+        switch (currentShape) {
+            case 'rect':
+                ctx.rect(startX, startY, endX - startX, endY - startY);
+                break;
+            case 'circle':
+                const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+                break;
+            case 'line':
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                break;
+        }
+    }
+    
+    // Get mouse or touch position
+    function getPointerPosition(e) {
+        if (e.type.includes('touch')) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            return [
+                e.touches[0].clientX - rect.left,
+                e.touches[0].clientY - rect.top
+            ];
+        } else {
+            return [e.offsetX, e.offsetY];
+        }
+    }
+    
+    // Tool handlers
+    pencilBtn.addEventListener('click', () => {
+        setActiveTool('pencil');
         currentShape = null;
-    }
-}
-
-function drawShape(x1, y1, x2, y2) {
-    ctx.beginPath();
-    ctx.strokeStyle = currentColor;
-    ctx.lineWidth = currentSize;
-
-    switch (currentShape) {
-        case 'rect':
-            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-            break;
-        case 'circle':
-            const radius = Math.hypot(x2 - x1, y2 - y1);
-            ctx.arc(x1, y1, radius, 0, Math.PI * 2);
-            ctx.stroke();
-            break;
-        case 'line':
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-            break;
-    }
-}
-
-function getMousePos(e) {
-    const rect = canvas.getBoundingClientRect();
-    return [
-        e.clientX - rect.left,
-        e.clientY - rect.top
-    ];
-}
-
-function saveState() {
-    historyIndex++;
-    drawingHistory.length = historyIndex;
-    drawingHistory.push(ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT));
-}
-
-function undo() {
-    if (historyIndex <= 0) return;
-    historyIndex--;
-    ctx.putImageData(drawingHistory[historyIndex], 0, 0);
-}
-
-function redo() {
-    if (historyIndex >= drawingHistory.length - 1) return;
-    historyIndex++;
-    ctx.putImageData(drawingHistory[historyIndex], 0, 0);
-}
-
-function resetCanvas() {
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    bgCtx.fillStyle = bgColor;
-    bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    drawingHistory = [];
-    historyIndex = -1;
-    saveState();
-}
-
-function toggleShapeMenu() {
-    const modal = document.querySelector('.shapes-modal');
-    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
-}
-
-function selectShape(e) {
-    // Get the closest button element to handle clicks on the icon
-    const button = e.target.closest('.shape-option');
-    if (!button) return;
+    });
     
-    currentShape = button.getAttribute('data-shape');
-    document.querySelector('.shapes-modal').style.display = 'none';
+    eraserBtn.addEventListener('click', () => {
+        setActiveTool('eraser');
+        currentShape = null;
+    });
     
-    // Update the UI to show active state
-    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelector('.shapes').classList.add('active');
-}
-
-function saveCanvas() {
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = CANVAS_WIDTH;
-    tempCanvas.height = CANVAS_HEIGHT;
-    const tempCtx = tempCanvas.getContext('2d');
-
-    tempCtx.drawImage(bgCanvas, 0, 0);
-    tempCtx.drawImage(canvas, 0, 0);
-
-    const link = document.createElement('a');
-    link.download = 'drawing.png';
-    link.href = tempCanvas.toDataURL();
-    link.click();
-}
-
-// Initialize
-saveState();
+    resetBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear the canvas?')) {
+            clearCanvas();
+            saveCanvasState();
+        }
+    });
+    
+    undoBtn.addEventListener('click', () => {
+        if (history.length > 1) {
+            redoStack.push(history.pop()); // Move current state to redo stack
+            clearCanvas();
+            restoreCanvasState(history[history.length - 1]);
+            saveToLocalStorage(); // Update local storage after undo
+        } else if (history.length === 1) {
+            redoStack.push(history.pop());
+            clearCanvas();
+            saveToLocalStorage(); // Update local storage after clearing
+        }
+    });
+    
+    redoBtn.addEventListener('click', () => {
+        if (redoStack.length > 0) {
+            const state = redoStack.pop();
+            history.push(state);
+            clearCanvas();
+            restoreCanvasState(state);
+            saveToLocalStorage(); // Update local storage after redo
+        }
+    });
+    
+    shapesBtn.addEventListener('click', () => {
+        shapesModal.classList.toggle('active');
+    });
+    
+    shapeOptions.forEach(option => {
+        option.addEventListener('click', () => {
+            const shape = option.getAttribute('data-shape');
+            currentShape = shape;
+            setActiveTool('pencil'); // Reset to pencil as base tool for shapes
+            shapesModal.classList.remove('active');
+        });
+    });
+    
+    saveBtn.addEventListener('click', () => {
+        // Create a temporary canvas that combines background and drawing
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = drawingCanvas.width;
+        tempCanvas.height = drawingCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Draw background
+        tempCtx.fillStyle = bgColor;
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        // Draw content
+        tempCtx.drawImage(drawingCanvas, 0, 0);
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.download = 'artbuddy-drawing.png';
+        link.href = tempCanvas.toDataURL('image/png');
+        link.click();
+    });
+    
+    // Settings handlers
+    sizeControl.addEventListener('input', () => {
+        lineWidth = sizeControl.value;
+    });
+    
+    colorPicker.addEventListener('input', () => {
+        strokeColor = colorPicker.value;
+    });
+    
+    bgColorPicker.addEventListener('input', () => {
+        bgColor = bgColorPicker.value;
+        bgCtx.fillStyle = bgColor;
+        bgCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+        
+        // Save background color to local storage
+        localStorage.setItem(STORAGE_BG_COLOR_KEY, bgColor);
+    });
+    
+    // Set active tool helper
+    function setActiveTool(tool) {
+        // Reset active states
+        pencilBtn.classList.remove('active');
+        eraserBtn.classList.remove('active');
+        
+        // Set new active state
+        if (tool === 'pencil') {
+            pencilBtn.classList.add('active');
+        } else if (tool === 'eraser') {
+            eraserBtn.classList.add('active');
+        }
+        
+        currentTool = tool;
+    }
+    
+    // Event listeners for drawing
+    drawingCanvas.addEventListener('mousedown', startDrawing);
+    drawingCanvas.addEventListener('mousemove', draw);
+    drawingCanvas.addEventListener('mouseup', endDrawing);
+    drawingCanvas.addEventListener('mouseout', endDrawing);
+    
+    // Touch support
+    drawingCanvas.addEventListener('touchstart', startDrawing);
+    drawingCanvas.addEventListener('touchmove', draw);
+    drawingCanvas.addEventListener('touchend', endDrawing);
+    
+    // Prevent scrolling when touching the canvas
+    drawingCanvas.addEventListener('touchstart', e => e.preventDefault());
+    drawingCanvas.addEventListener('touchmove', e => e.preventDefault());
+    
+    // Click outside shapes modal to close it
+    document.addEventListener('click', (e) => {
+        if (!shapesModal.contains(e.target) && e.target !== shapesBtn) {
+            shapesModal.classList.remove('active');
+        }
+    });
+    
+    // Initialize
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    
+    // Create initial history entry if loading from scratch
+    if (history.length === 0 && !localStorage.getItem(STORAGE_DRAWING_KEY)) {
+        saveCanvasState(); // Initial empty state
+    }
+});
