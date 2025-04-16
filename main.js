@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (history.length > 0) {
             restoreCanvasState(history[history.length - 1]);
         } else {
-            // Try to load from local storage if no history exists
             loadFromLocalStorage();
         }
     }
